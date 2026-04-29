@@ -7,6 +7,7 @@ abstract class HealthRepository {
   Future<Either<Failure, void>> syncHealthData(HealthDataEntity data);
   Future<Either<Failure, DateTime?>> getLastSyncTime();
   Future<Either<Failure, void>> requestPermissions();
+  Future<bool> hasAllPermissions();
   Future<Either<Failure, void>> syncPendingData();
   Future<Either<Failure, int>> getTodaySteps();
   Future<Either<Failure, double>> getTodayCalories();
