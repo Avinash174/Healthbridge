@@ -140,6 +140,10 @@ class HealthRepositoryImpl implements HealthRepository {
       if (calories == 0) calories = steps * 0.04;
       if (moveMinutes == 0) moveMinutes = (steps / 150).round();
 
+      double sleepHours = 0;
+      DateTime? bedtime;
+      DateTime? wakeUp;
+
       // 4. Filter for sleep data and aggregate using interval merging to prevent double-counting
       final List<HealthDataPoint> sleepPoints = allPoints.where((p) => 
         p.type == HealthDataType.SLEEP_SESSION ||
