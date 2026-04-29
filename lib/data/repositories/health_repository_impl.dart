@@ -592,10 +592,15 @@ class HealthRepositoryImpl implements HealthRepository {
           HealthDataType.ACTIVE_ENERGY_BURNED,
         ];
       } else {
-        typesToFetch = [HealthDataType.EXERCISE_TIME];
+        // Expanded iOS fetch to include Workouts and Active Energy
+        typesToFetch = [
+          HealthDataType.EXERCISE_TIME,
+          HealthDataType.WORKOUT,
+          HealthDataType.ACTIVE_ENERGY_BURNED,
+        ];
       }
 
-      dev.log('getTodayMoveMinutes: Requesting types: $typesToFetch', name: 'HealthRepository');
+      dev.log('getTodayMoveMinutes: Requesting types: $typesToFetch for window $last24h to $now', name: 'HealthRepository');
       
       final points = await health.getHealthDataFromTypes(
         startTime: last24h,

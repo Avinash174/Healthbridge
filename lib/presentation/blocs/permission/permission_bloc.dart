@@ -20,8 +20,9 @@ class PermissionBloc extends Bloc<PermissionEvent, PermissionState> {
     });
 
     on<RequestLocationPermission>((event, emit) async {
-      dev.log('RequestLocationPermission', name: 'PermissionBloc');
+      dev.log('Requesting Location Permission...', name: 'PermissionBloc');
       final status = await Permission.location.request();
+      dev.log('Location status: $status', name: 'PermissionBloc');
       if (status.isGranted) {
         emit(PermissionUpdating(
           healthGranted: state.healthGranted,
@@ -29,13 +30,16 @@ class PermissionBloc extends Bloc<PermissionEvent, PermissionState> {
           cameraGranted: state.cameraGranted,
           microphoneGranted: state.microphoneGranted,
         ));
+      } else if (status.isPermanentlyDenied) {
+        dev.log('Location permanently denied - suggests macro or usage description issue.', name: 'PermissionBloc');
       }
       _checkAllGranted(emit);
     });
 
     on<RequestCameraPermission>((event, emit) async {
-      dev.log('RequestCameraPermission', name: 'PermissionBloc');
+      dev.log('Requesting Camera Permission...', name: 'PermissionBloc');
       final status = await Permission.camera.request();
+      dev.log('Camera status: $status', name: 'PermissionBloc');
       if (status.isGranted) {
         emit(PermissionUpdating(
           healthGranted: state.healthGranted,
@@ -48,8 +52,9 @@ class PermissionBloc extends Bloc<PermissionEvent, PermissionState> {
     });
 
     on<RequestMicrophonePermission>((event, emit) async {
-      dev.log('RequestMicrophonePermission', name: 'PermissionBloc');
+      dev.log('Requesting Microphone Permission...', name: 'PermissionBloc');
       final status = await Permission.microphone.request();
+      dev.log('Microphone status: $status', name: 'PermissionBloc');
       if (status.isGranted) {
         emit(PermissionUpdating(
           healthGranted: state.healthGranted,
