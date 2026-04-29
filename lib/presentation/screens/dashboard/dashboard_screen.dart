@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -113,10 +115,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   bedtime = state.bedtime;
                   wakeUp = state.wakeUp;
                   
-                  if (state.healthData != null) {
-                    sleepHours = state.healthData!.sleepHours;
-                    if (state.healthData!.latitude != null && state.healthData!.longitude != null) {
-                      location = '${state.healthData!.latitude!.toStringAsFixed(2)}, ${state.healthData!.longitude!.toStringAsFixed(2)}';
+                  final hData = state.healthData;
+                  if (hData != null) {
+                    sleepHours = hData.sleepHours;
+                    final lat = hData.latitude;
+                    final lon = hData.longitude;
+                    if (lat != null && lon != null) {
+                      location = '${lat.toStringAsFixed(2)}, ${lon.toStringAsFixed(2)}';
                     }
                   }
                 } else if (state is SyncFailure) {
@@ -131,6 +136,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (state is SyncSuccess && state.isBatteryOptimized && Platform.isAndroid)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 24),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.orangeAccent.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Text(
+                                        'Sync might fail on this device due to battery optimization.',
+                                        style: TextStyle(color: Colors.white, fontSize: 13),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => context.read<SyncBloc>().add(RequestDisableOptimization()),
+                                      child: const Text('FIX NOW', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ).animate().shake(),
                             // --- Google Fit Style Header ---
                             Center(
                               child: _ActivityRings(

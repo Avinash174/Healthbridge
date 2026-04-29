@@ -12,6 +12,8 @@ class FetchLastSyncTime extends SyncEvent {}
 class FetchTodaySteps extends SyncEvent {}
 class RefreshDashboardData extends SyncEvent {}
 class OpenHealthSettings extends SyncEvent {}
+class CheckBatteryOptimization extends SyncEvent {}
+class RequestDisableOptimization extends SyncEvent {}
 
 abstract class SyncState extends Equatable {
   const SyncState();
@@ -32,6 +34,7 @@ class SyncSuccess extends SyncState {
   final DateTime? bedtime;
   final DateTime? wakeUp;
   final HealthDataEntity? healthData;
+  final bool isBatteryOptimized;
 
   const SyncSuccess(
     this.lastSyncTime, {
@@ -43,6 +46,7 @@ class SyncSuccess extends SyncState {
     this.bedtime,
     this.wakeUp,
     this.healthData,
+    this.isBatteryOptimized = false,
   });
 
   @override
@@ -55,7 +59,8 @@ class SyncSuccess extends SyncState {
         todayMoveMinutes,
         bedtime,
         wakeUp,
-        healthData
+        healthData,
+        isBatteryOptimized,
       ];
 }
 class SyncFailure extends SyncState {

@@ -58,109 +58,142 @@ class HealthRepositoryImpl implements HealthRepository {
     try {
       final now = DateTime.now();
       final last30Days = now.subtract(const Duration(days: 30));
+      final midnight = DateTime(now.year, now.month, now.day);
+      final last24h = now.subtract(const Duration(hours: 24));
 
-      // 1. Check permissions
-      List<HealthDataType> grantedTypes = [];
+      if (Platform.isAndroid) {
+        final sdkStatus = await health.getHealthConnectSdkStatus();
+        dev.log('Android Device Diagnosis: Health Connect SDK Status = $sdkStatus', name: 'HealthRepository');
+      }
+
+      // 1. Bulk check permissions to avoid multiple native calls
       final platformTypes = _platformTypes;
-      for (var type in platformTypes) {
-        final granted = await health.hasPermissions([type]) ?? false;
-        dev.log('Permission check: $type = $granted', name: 'HealthRepository');
-        if (granted) {
-          grantedTypes.add(type);
+      final bool hasAllGranted = await health.hasPermissions(platformTypes) ?? false;
+      List<HealthDataType> grantedTypes = hasAllGranted ? platformTypes : [];
+      
+      if (!hasAllGranted) {
+        dev.log('Bulk permission check returned false, checking essential types individually...', name: 'HealthRepository');
+        for (var type in [HealthDataType.STEPS, HealthDataType.SLEEP_SESSION, HealthDataType.WEIGHT]) {
+          if (await health.hasPermissions([type]) ?? false) {
+            grantedTypes.add(type);
+          }
         }
       }
 
       if (grantedTypes.isEmpty) {
-        dev.log('No health permissions reported by hasPermissions, using all platform types as fallback', name: 'HealthRepository');
+        dev.log('No health permissions detected, attempting bulk fetch anyway as fallback', name: 'HealthRepository');
         grantedTypes = List.from(platformTypes);
       }
 
-      // 2. Fetch data with specific windows
-      // Sleep: Last 7 days
-      final sleepType = [
-        HealthDataType.SLEEP_SESSION,
-        HealthDataType.SLEEP_ASLEEP,
-        HealthDataType.SLEEP_AWAKE,
-        HealthDataType.SLEEP_DEEP,
-        HealthDataType.SLEEP_LIGHT,
-        HealthDataType.SLEEP_REM,
-        HealthDataType.SLEEP_UNKNOWN,
-      ].where((t) => grantedTypes.contains(t)).toList();
+      // 2. CONSOLIDATED FETCH: Fetch everything in ONE call to prevent rate limiting
+      dev.log('PERFORMANCE: Triggering consolidated bulk fetch for ${grantedTypes.length} types', name: 'HealthRepository');
+      final allPoints = await health.getHealthDataFromTypes(
+        startTime: last30Days, 
+        endTime: now, 
+        types: grantedTypes
+      );
+      dev.log('PERFORMANCE: Bulk fetch returned ${allPoints.length} total points', name: 'HealthRepository');
 
-      final sleepTypesToFetch = sleepType.isNotEmpty ? sleepType : [
-        HealthDataType.SLEEP_SESSION,
-        HealthDataType.SLEEP_ASLEEP,
-      ];
-      
-      final recentPoints = <HealthDataPoint>[];
-      try {
-        dev.log('Fetching sleep data for window: $last30Days to $now using types: $sleepTypesToFetch', name: 'HealthRepository');
-        final pts = await health.getHealthDataFromTypes(startTime: last30Days, endTime: now, types: sleepTypesToFetch);
-        dev.log('Bulk sleep fetch returned ${pts.length} points', name: 'HealthRepository');
-        recentPoints.addAll(pts);
-      } catch (e) {
-        dev.log('Sleep fetch failed: $e', name: 'HealthRepository');
-      }
-      
-      // Diagnostic: Check total points for ALL types
-      final allPoints = await health.getHealthDataFromTypes(startTime: last30Days, endTime: now, types: platformTypes);
-      dev.log('DIAGNOSTIC: TOTAL POINTS FOUND IN 30 DAYS: ${allPoints.length}', name: 'HealthRepository');
+      // 3. AGGREGATE IN-MEMORY (Avoid more native calls)
+      int steps = 0;
+      double calories = 0;
+      double weight = 0;
+      double distance = 0;
+      int moveMinutes = 0;
+      DateTime? latestWeightTime;
 
-      // 3. Aggregate data using dedicated methods
-      final stepsResult = await getTodaySteps();
-      final caloriesResult = await getTodayCalories();
-      final weightResult = await getLatestWeight();
-      final distanceResult = await getTodayDistance();
-      final moveMinutesResult = await getTodayMoveMinutes();
-
-      int steps = stepsResult.getOrElse(() => 0);
-      double calories = caloriesResult.getOrElse(() => 0);
-      double weight = weightResult.getOrElse(() => 0);
-      double distance = distanceResult.getOrElse(() => 0);
-      int moveMinutes = moveMinutesResult.getOrElse(() => 0);
-
-      double sleepHours = 0;
-      DateTime? bedtime;
-      DateTime? wakeUp;
-
-      // Filter for sleep data ending in the last 24 hours
-      final last24h = now.subtract(const Duration(hours: 24));
-      final recentSleepPoints = recentPoints.where((p) => p.dateTo.isAfter(last24h)).toList();
-
-      if (recentPoints.isNotEmpty) {
-        // 1. Find the most recent sleep point (excluding AWAKE) to anchor the latest session
-        final validSleepPoints = recentPoints.where((p) => 
-          p.type != HealthDataType.SLEEP_AWAKE && 
-          p.dateTo.isBefore(now)
-        ).toList();
+      for (var p in allPoints) {
+        final isToday = p.dateFrom.isAfter(midnight);
+        final val = p.value;
         
-        if (validSleepPoints.isNotEmpty) {
-          validSleepPoints.sort((a, b) => b.dateTo.compareTo(a.dateTo));
-          final latestPoint = validSleepPoints.first;
+        if (val is NumericHealthValue) {
+          final numericVal = val.numericValue.toDouble();
           
-          // Anchor the "current" sleep session to the latest wake-up found
-          wakeUp = latestPoint.dateTo;
+          if (isToday) {
+            if (p.type == HealthDataType.STEPS) steps += numericVal.toInt();
+            if (p.type == HealthDataType.ACTIVE_ENERGY_BURNED || p.type == HealthDataType.TOTAL_CALORIES_BURNED) calories += numericVal;
+            if (p.type == HealthDataType.DISTANCE_DELTA || p.type == HealthDataType.DISTANCE_WALKING_RUNNING) distance += numericVal;
+          }
           
-          // 2. Aggregate all sleep points within a 14-hour window of that wake-up (one night's worth)
-          final sessionStartLimit = wakeUp!.subtract(const Duration(hours: 14));
-          final sessionPoints = validSleepPoints.where((p) => p.dateFrom.isAfter(sessionStartLimit)).toList();
-          
-          dev.log('Aggregating ${sessionPoints.length} points for latest sleep session (WakeUp: $wakeUp)', name: 'HealthRepository');
-          
-          // Prefer SLEEP_SESSION for total hours if available
-          final sessions = sessionPoints.where((p) => p.type == HealthDataType.SLEEP_SESSION).toList();
-          if (sessions.isNotEmpty) {
-            for (var s in sessions) {
-              sleepHours += s.dateTo.difference(s.dateFrom).inMinutes / 60.0;
-              if (bedtime == null || s.dateFrom.isBefore(bedtime!)) bedtime = s.dateFrom;
-            }
-          } else {
-            // Otherwise aggregate granular stages (ASLEEP, DEEP, etc)
-            for (var p in sessionPoints) {
-              sleepHours += p.dateTo.difference(p.dateFrom).inMinutes / 60.0;
-              if (bedtime == null || p.dateFrom.isBefore(bedtime!)) bedtime = p.dateFrom;
+          if (p.type == HealthDataType.WEIGHT) {
+            if (latestWeightTime == null || p.dateFrom.isAfter(latestWeightTime)) {
+              weight = numericVal;
+              latestWeightTime = p.dateFrom;
             }
           }
+        }
+      }
+
+      // Handle Distance unit conversion (meters to km)
+      distance = distance / 1000.0;
+
+      // Aggregating Move Minutes from workouts or exercise time
+      for (var p in allPoints.where((p) => p.dateFrom.isAfter(last24h))) {
+        if (p.type == HealthDataType.WORKOUT) {
+          moveMinutes += p.dateTo.difference(p.dateFrom).inMinutes;
+        } else if (p.type == HealthDataType.EXERCISE_TIME && p.value is NumericHealthValue) {
+          moveMinutes += (p.value as NumericHealthValue).numericValue.toInt();
+        }
+      }
+
+      // Fallback for calories/move minutes if zero
+      if (calories == 0) calories = steps * 0.04;
+      if (moveMinutes == 0) moveMinutes = (steps / 150).round();
+
+      // 4. Filter for sleep data and aggregate using interval merging to prevent double-counting
+      final List<HealthDataPoint> sleepPoints = allPoints.where((p) => 
+        p.type == HealthDataType.SLEEP_SESSION ||
+        p.type == HealthDataType.SLEEP_ASLEEP ||
+        p.type == HealthDataType.SLEEP_DEEP ||
+        p.type == HealthDataType.SLEEP_LIGHT ||
+        p.type == HealthDataType.SLEEP_REM ||
+        p.type == HealthDataType.SLEEP_UNKNOWN
+      ).toList();
+
+      if (sleepPoints.isNotEmpty) {
+        // Find the latest wake-up to anchor the current session
+        sleepPoints.sort((a, b) => b.dateTo.compareTo(a.dateTo));
+        wakeUp = sleepPoints.first.dateTo;
+        
+        final sessionStartLimit = wakeUp!.subtract(const Duration(hours: 14));
+        final sessionPoints = sleepPoints.where((p) => p.dateFrom.isAfter(sessionStartLimit)).toList();
+
+        if (sessionPoints.isNotEmpty) {
+          // Collect all sleep intervals
+          List<Map<String, DateTime>> intervals = sessionPoints.map((p) => {
+            'start': p.dateFrom,
+            'end': p.dateTo,
+          }).toList();
+
+          // Merge overlapping intervals
+          intervals.sort((a, b) => a['start']!.compareTo(b['start']!));
+          
+          List<Map<String, DateTime>> merged = [];
+          if (intervals.isNotEmpty) {
+            var current = intervals[0];
+            for (int i = 1; i < intervals.length; i++) {
+              if (intervals[i]['start']!.isBefore(current['end']!)) {
+                if (intervals[i]['end']!.isAfter(current['end']!)) {
+                  current['end'] = intervals[i]['end']!;
+                }
+              } else {
+                merged.add(current);
+                current = intervals[i];
+              }
+            }
+            merged.add(current);
+          }
+
+          // Calculate total hours from merged intervals
+          double totalMinutes = 0;
+          for (var interval in merged) {
+            totalMinutes += interval['end']!.difference(interval['start']!).inMinutes;
+            if (bedtime == null || interval['start']!.isBefore(bedtime!)) {
+              bedtime = interval['start'];
+            }
+          }
+          sleepHours = totalMinutes / 60.0;
+          dev.log('Merged ${sessionPoints.length} points into ${merged.length} intervals. Total sleep: ${sleepHours.toStringAsFixed(1)}h', name: 'HealthRepository');
         }
       }
 
@@ -187,13 +220,15 @@ class HealthRepositoryImpl implements HealthRepository {
           for (var p in last24hSteps) {
             // Bedtime search (latest point in evening window)
             if (p.dateTo.isAfter(eveningStart) && p.dateTo.isBefore(bedtimeSearchEnd)) {
-              if (lastActiveEvening == null || p.dateTo.isAfter(lastActiveEvening!)) {
+              final activeEvening = lastActiveEvening;
+              if (activeEvening == null || p.dateTo.isAfter(activeEvening)) {
                 lastActiveEvening = p.dateTo;
               }
             }
             // Wake up search (earliest point in morning window)
             if (p.dateTo.isAfter(morningStart) && p.dateTo.isBefore(now)) {
-              if (firstActiveMorning == null || p.dateFrom.isBefore(firstActiveMorning!)) {
+              final activeMorning = firstActiveMorning;
+              if (activeMorning == null || p.dateFrom.isBefore(activeMorning)) {
                 firstActiveMorning = p.dateFrom;
               }
             }
@@ -210,10 +245,14 @@ class HealthRepositoryImpl implements HealthRepository {
 
           // If we detected both via activity and had 0 sleep hours, estimate them
           if (bedtime != null && wakeUp != null && sleepHours == 0) {
-            final diff = wakeUp!.difference(bedtime!).inMinutes / 60.0;
-            if (diff > 0 && diff < 12) { // Only estimate if range is reasonable (under 12h)
-              sleepHours = diff;
-              dev.log('Estimated sleep duration from activity gap: ${sleepHours.toStringAsFixed(1)} hrs', name: 'HealthRepository');
+            final bTime = bedtime;
+            final wUp = wakeUp;
+            if (bTime != null && wUp != null) {
+               final diff = wUp.difference(bTime).inMinutes / 60.0;
+               if (diff > 0 && diff < 12) { // Only estimate if range is reasonable (under 12h)
+                 sleepHours = diff;
+                 dev.log('Estimated sleep duration from activity gap: ${sleepHours.toStringAsFixed(1)} hrs', name: 'HealthRepository');
+               }
             }
           }
         } catch (e) {
@@ -229,12 +268,22 @@ class HealthRepositoryImpl implements HealthRepository {
       try {
         final permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-          final position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.low,
-            timeLimit: const Duration(seconds: 10),
-          );
-          lat = position.latitude;
-          lon = position.longitude;
+          // Increase timeout and use fallback to last known position
+          Position? position;
+          try {
+            position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.low,
+              timeLimit: const Duration(seconds: 25),
+            );
+          } catch (e) {
+            dev.log('getCurrentPosition timed out, attempting fallback to lastKnownPosition', name: 'HealthRepository');
+            position = await Geolocator.getLastKnownPosition();
+          }
+          
+          if (position != null) {
+            lat = position.latitude;
+            lon = position.longitude;
+          }
         }
       } catch (e) {
         dev.log('Failed to capture location: $e', name: 'HealthRepository');
@@ -270,9 +319,12 @@ class HealthRepositoryImpl implements HealthRepository {
         longitude: lon,
         deviceId: devId,
       ));
-    } catch (e) {
-      dev.log('Error fetching health data: $e', name: 'HealthRepository');
-      return Left(ServerFailure(e.toString()));
+    } catch (e, stack) {
+      dev.log('FATAL ERROR fetching health data: $e', name: 'HealthRepository', error: e, stackTrace: stack);
+      if (e.toString().contains('Rate limited') || e.toString().contains('quota')) {
+        return const Left(PermissionFailure('Health platform is busy. Please wait a few minutes and try again.'));
+      }
+      return Left(ServerFailure('Failed to fetch health data: $e'));
     }
   }
 
@@ -689,6 +741,32 @@ class HealthRepositoryImpl implements HealthRepository {
       }
     } else {
       await ph.openAppSettings();
+    }
+  }
+
+  @override
+  Future<bool> isBatteryOptimizationEnabled() async {
+    if (Platform.isAndroid) {
+      try {
+        final status = await ph.Permission.ignoreBatteryOptimizations.status;
+        // If status is denied, it means optimization IS enabled (we are NOT ignoring it)
+        return status.isDenied || status.isRestricted;
+      } catch (e) {
+        dev.log('Error checking battery optimization: $e', name: 'HealthRepository');
+        return false;
+      }
+    }
+    return false;
+  }
+
+  @override
+  Future<void> requestDisableBatteryOptimization() async {
+    if (Platform.isAndroid) {
+      try {
+        await ph.Permission.ignoreBatteryOptimizations.request();
+      } catch (e) {
+        dev.log('Error requesting battery optimization disable: $e', name: 'HealthRepository');
+      }
     }
   }
 }

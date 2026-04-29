@@ -56,6 +56,7 @@ class SyncBloc extends Bloc<SyncEvent, SyncState> {
         repository.getTodayDistance(),
         repository.getTodayMoveMinutes(),
         repository.getHealthData(),
+        repository.isBatteryOptimizationEnabled(),
       ]);
 
       final lastSyncResult = results[0] as Either<Failure, DateTime?>;
@@ -65,6 +66,7 @@ class SyncBloc extends Bloc<SyncEvent, SyncState> {
       final distanceResult = results[4] as Either<Failure, double>;
       final moveMinutesResult = results[5] as Either<Failure, int>;
       final healthResult = results[6] as Either<Failure, HealthDataEntity>;
+      final isOptimized = results[7] as bool;
 
       DateTime? lastSync;
       int steps = 0;
@@ -121,9 +123,19 @@ class SyncBloc extends Bloc<SyncEvent, SyncState> {
             bedtime: healthData?.bedtime,
             wakeUp: healthData?.wakeUp,
             healthData: healthData,
+            isBatteryOptimized: isOptimized,
           ));
         },
       );
+    });
+
+    on<CheckBatteryOptimization>((event, emit) async {
+      add(RefreshDashboardData());
+    });
+
+    on<RequestDisableOptimization>((event, emit) async {
+      await repository.requestDisableBatteryOptimization();
+      add(RefreshDashboardData());
     });
 
     on<FetchLastSyncTime>((event, emit) async {

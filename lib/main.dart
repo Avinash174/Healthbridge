@@ -36,7 +36,7 @@ void main() async {
   
   await Workmanager().initialize(
     callbackDispatcher,
-    isInDebugMode: true, // Set to false for production
+    isInDebugMode: false,
   );
 
   // Register the 24-hour sync task
@@ -82,7 +82,20 @@ class HealthBridgeApp extends StatelessWidget {
           '/': (context) => BlocBuilder<AuthBloc, AuthState>(
                 builder: (context, state) {
                   if (state is Authenticated) {
-                    return const DashboardScreen();
+                    return FutureBuilder<bool>(
+                      future: di.sl<HealthRepository>().hasAllPermissions(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        if (snapshot.data == true) {
+                          return const DashboardScreen();
+                        }
+                        return const PermissionFlowScreen();
+                      },
+                    );
                   }
                   return const LoginScreen();
                 },

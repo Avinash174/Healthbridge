@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_state.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/di/injection_container.dart' as di;
+import '../../../domain/repositories/health_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -69,7 +71,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   BlocConsumer<AuthBloc, AuthState>(
                     listener: (context, state) {
                       if (state is Authenticated) {
-                        Navigator.pushReplacementNamed(context, '/permissions');
+                        // Check if permissions are already granted
+                        di.sl<HealthRepository>().hasAllPermissions().then((hasPermissions) {
+                          if (mounted) {
+                            if (hasPermissions) {
+                              Navigator.pushReplacementNamed(context, '/dashboard');
+                            } else {
+                              Navigator.pushReplacementNamed(context, '/permissions');
+                            }
+                          }
+                        });
                       } else if (state is AuthError) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(state.message)),
