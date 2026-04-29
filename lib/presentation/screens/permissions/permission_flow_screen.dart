@@ -6,8 +6,19 @@ import '../../blocs/permission/permission_bloc.dart';
 import '../../blocs/permission/permission_state.dart';
 import '../../../core/theme/app_theme.dart';
 
-class PermissionFlowScreen extends StatelessWidget {
+class PermissionFlowScreen extends StatefulWidget {
   const PermissionFlowScreen({super.key});
+
+  @override
+  State<PermissionFlowScreen> createState() => _PermissionFlowScreenState();
+}
+
+class _PermissionFlowScreenState extends State<PermissionFlowScreen> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<PermissionBloc>().add(CheckInitialPermissions());
+  }
 
   @override
   Widget build(BuildContext context) {

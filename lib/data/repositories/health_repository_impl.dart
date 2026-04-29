@@ -312,6 +312,18 @@ class HealthRepositoryImpl implements HealthRepository {
   }
 
   @override
+  Future<bool> hasAllPermissions() async {
+    try {
+      final platformTypes = _platformTypes;
+      final bool? hasPermissions = await health.hasPermissions(platformTypes);
+      return hasPermissions ?? false;
+    } catch (e) {
+      dev.log('Error checking permissions: $e', name: 'HealthRepository');
+      return false;
+    }
+  }
+
+  @override
   Future<Either<Failure, void>> requestPermissions() async {
     try {
       final sdkStatus = await health.getHealthConnectSdkStatus();
@@ -329,6 +341,13 @@ class HealthRepositoryImpl implements HealthRepository {
           return const Left(PermissionFailure('Activity Recognition permission is required for step tracking. Please enable it in Settings.'));
         }
       }
+
+      // Check if we already have permissions before requesting
+      if (await hasAllPermissions()) {
+        dev.log('All health permissions already granted. Skipping authorization request.', name: 'HealthRepository');
+        return const Right(null);
+      }
+
       final platformTypes = _platformTypes;
       dev.log('Requesting health permissions for: $platformTypes', name: 'HealthRepository');
       final bool granted = await health.requestAuthorization(platformTypes);

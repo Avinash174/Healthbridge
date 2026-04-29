@@ -87,6 +87,33 @@ class PermissionBloc extends Bloc<PermissionEvent, PermissionState> {
       _checkAllGranted(emit);
     });
 
+    on<CheckInitialPermissions>((event, emit) async {
+      dev.log('CheckInitialPermissions', name: 'PermissionBloc');
+      
+      final results = await Future.wait([
+        healthRepository.hasAllPermissions(),
+        Permission.location.isGranted,
+        Permission.camera.isGranted,
+        Permission.microphone.isGranted,
+      ]);
+
+      final healthGranted = results[0] as bool;
+      final locationGranted = results[1] as bool;
+      final cameraGranted = results[2] as bool;
+      final microphoneGranted = results[3] as bool;
+
+      dev.log('Initial permissions: Health=$healthGranted, Location=$locationGranted, Camera=$cameraGranted, Mic=$microphoneGranted', name: 'PermissionBloc');
+
+      emit(PermissionUpdating(
+        healthGranted: healthGranted,
+        locationGranted: locationGranted,
+        cameraGranted: cameraGranted,
+        microphoneGranted: microphoneGranted,
+      ));
+      
+      _checkAllGranted(emit);
+    });
+
     on<OpenHealthSettings>((event, emit) async {
       dev.log('OpenHealthSettings', name: 'PermissionBloc');
       await healthRepository.openHealthConnectSettings();
