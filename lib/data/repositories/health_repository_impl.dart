@@ -13,6 +13,7 @@ import '../models/health_data_model.dart';
 import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 
 class HealthRepositoryImpl implements HealthRepository {
   final RemoteDataSource remoteDataSource;
@@ -344,7 +345,7 @@ class HealthRepositoryImpl implements HealthRepository {
           return const Right(null);
         }
         dev.log('Health permissions denied by user or system', name: 'HealthRepository');
-        return const Left(PermissionFailure('Health permissions were denied. Please ensure you have granted access in Health Connect settings.'));
+        return const Left(PermissionFailure('Health permissions were denied. Please ensure you have granted access in Health Connect settings. You may need to enable them manually.'));
       }
     } catch (e) {
       dev.log('Error requesting health permissions: $e', name: 'HealthRepository');
@@ -650,5 +651,20 @@ class HealthRepositoryImpl implements HealthRepository {
   @override
   Future<void> openAppSettings() async {
     await ph.openAppSettings();
+  }
+
+  @override
+  Future<void> openHealthConnectSettings() async {
+    if (Platform.isAndroid) {
+      try {
+        const platform = MethodChannel('health_channel');
+        await platform.invokeMethod('openHealthConnectSettings');
+      } catch (e) {
+        dev.log('Failed to open Health Connect settings: $e', name: 'HealthRepository');
+        await ph.openAppSettings();
+      }
+    } else {
+      await ph.openAppSettings();
+    }
   }
 }

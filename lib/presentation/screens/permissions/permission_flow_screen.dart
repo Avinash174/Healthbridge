@@ -22,6 +22,7 @@ class PermissionFlowScreen extends StatelessWidget {
                 if (state is AllPermissionsGranted) {
                   Navigator.pushReplacementNamed(context, '/dashboard');
                 } else if (state is PermissionError) {
+                  final isHealthError = state.message.contains('Health');
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(state.message),
@@ -31,7 +32,13 @@ class PermissionFlowScreen extends StatelessWidget {
                       action: SnackBarAction(
                         label: 'Settings',
                         textColor: Colors.white,
-                        onPressed: () => openAppSettings(),
+                        onPressed: () {
+                          if (isHealthError) {
+                            context.read<PermissionBloc>().add(OpenHealthSettings());
+                          } else {
+                            openAppSettings();
+                          }
+                        },
                       ),
                     ),
                   );

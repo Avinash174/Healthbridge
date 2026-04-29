@@ -86,6 +86,11 @@ class PermissionBloc extends Bloc<PermissionEvent, PermissionState> {
       );
       _checkAllGranted(emit);
     });
+
+    on<OpenHealthSettings>((event, emit) async {
+      dev.log('OpenHealthSettings', name: 'PermissionBloc');
+      await healthRepository.openHealthConnectSettings();
+    });
   }
 
   void _checkAllGranted(Emitter<PermissionState> emit) {

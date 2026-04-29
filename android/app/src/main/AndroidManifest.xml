@@ -37,10 +37,6 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         
-        <!-- Required for Android 14 Health Connect -->
-        <property
-            android:name="android.health.PROPERTY_HEALTH_CONNECT_PERMISSION_RATIONALE_ACTIVITY_NAME"
-            android:value="com.example.healthbridge.MainActivity" />
             
         <activity
             android:name=".MainActivity"
@@ -69,12 +65,18 @@
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
             
+            <!-- Android 14 View Permission Usage Filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+
             <meta-data
                 android:name="health_permissions_rationale_activity"
                 android:value="com.example.healthbridge.MainActivity" />
         </activity>
 
-        <!-- Keep property for Android 14+ -->
+        <!-- Keep property for Android 14+ (one instance is enough) -->
         <property
             android:name="android.health.PROPERTY_HEALTH_CONNECT_PERMISSION_RATIONALE_ACTIVITY_NAME"
             android:value="com.example.healthbridge.MainActivity" />

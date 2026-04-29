@@ -15,4 +15,5 @@ abstract class HealthRepository {
   Future<Either<Failure, int>> getTodayMoveMinutes();
   Future<Either<Failure, void>> performBackgroundSync();
   Future<void> openAppSettings();
+  Future<void> openHealthConnectSettings();
 }

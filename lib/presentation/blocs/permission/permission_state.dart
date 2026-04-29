@@ -16,6 +16,7 @@ class RequestLocationPermission extends PermissionEvent {}
 class RequestCameraPermission extends PermissionEvent {}
 class RequestMicrophonePermission extends PermissionEvent {}
 class RequestHealthPermission extends PermissionEvent {}
+class OpenHealthSettings extends PermissionEvent {}
 
 abstract class PermissionState extends Equatable {
   final bool healthGranted;
